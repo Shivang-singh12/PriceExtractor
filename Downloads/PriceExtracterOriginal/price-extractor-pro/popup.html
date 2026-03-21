@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Price Extractor Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080a0d;
+      --surface:   #0d1117;
+      --panel:     #111620;
+      --border:    #1e2530;
+      --border2:   #2a3444;
+      --accent:    #00d4aa;
+      --accent2:   #00b894;
+      --warn:      #ffa502;
+      --error:     #ff4757;
+      --success:   #00d4aa;
+      --text:      #e8edf5;
+      --muted:     #5a6a80;
+      --muted2:    #8899aa;
+      --amazon:    #ff9900;
+      --flipkart:  #2874f0;
+      --mono:      'JetBrains Mono', monospace;
+      --sans:      'Syne', sans-serif;
+      --r:         6px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      width: 540px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 200px;
+    }
+
+    /* ── Scanline texture overlay ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.04) 2px,
+        rgba(0,0,0,0.04) 4px
+      );
+    }
+
+    /* ── Header ── */
+    .header {
+      position: relative; z-index: 1;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px 13px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo-wrap { display: flex; align-items: center; gap: 10px; }
+
+    .logo-mark {
+      width: 34px; height: 34px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono);
+      font-size: 16px; font-weight: 700;
+      color: #000;
+      letter-spacing: -1px;
+      flex-shrink: 0;
+      box-shadow: 0 0 16px rgba(0,212,170,0.3);
+    }
+
+    .logo-title {
+      font-family: var(--sans);
+      font-size: 14px; font-weight: 800;
+      letter-spacing: 0.5px;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .logo-sub {
+      font-size: 10px; font-weight: 400;
+      color: var(--muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .header-tags { display: flex; gap: 6px; }
+    .tag {
+      font-family: var(--mono);
+      font-size: 9px; font-weight: 500;
+      padding: 2px 7px;
+      border-radius: 3px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .tag-amazon   { background: rgba(255,153,0,0.1);  color: var(--amazon);   border: 1px solid rgba(255,153,0,0.2); }
+    .tag-flipkart { background: rgba(40,116,240,0.1); color: var(--flipkart); border: 1px solid rgba(40,116,240,0.2); }
+
+    /* ── Main body ── */
+    .body { position: relative; z-index: 1; padding: 16px 18px; }
+
+    /* ── Section ── */
+    .section { margin-bottom: 14px; }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 9px; font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase; letter-spacing: 1.5px;
+      margin-bottom: 7px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 1.5px dashed var(--border2);
+      border-radius: var(--r);
+      padding: 18px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: var(--panel);
+      position: relative;
+      overflow: hidden;
+    }
+    .upload-zone::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 50% -10%, rgba(0,212,170,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(0,212,170,0.04);
+    }
+    .upload-zone.has-file {
+      border-color: var(--accent);
+      border-style: solid;
+    }
+
+    .upload-icon { font-size: 28px; margin-bottom: 8px; opacity: 0.7; }
+    .upload-title {
+      font-size: 13px; font-weight: 600;
+      color: var(--text); margin-bottom: 3px;
+    }
+    .upload-sub {
+      font-family: var(--mono);
+      font-size: 10px; color: var(--muted);
+    }
+    .upload-file-info {
+      display: none; align-items: center; justify-content: center;
+      gap: 10px;
+    }
+    .upload-file-info.show { display: flex; }
+    .file-icon {
+      font-size: 22px;
+    }
+    .file-details { text-align: left; }
+    .file-name {
+      font-size: 12px; font-weight: 700; color: var(--accent);
+      max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .file-meta {
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+    }
+    .file-clear {
+      margin-left: auto; background: none; border: none;
+      color: var(--muted); cursor: pointer; font-size: 16px; padding: 4px;
+      transition: color 0.15s;
+      flex-shrink: 0;
+    }
+    .file-clear:hover { color: var(--error); }
+
+    #fileInput { display: none; }
+
+    /* ── Config row ── */
+    .config-row {
+      display: flex; gap: 10px; align-items: center;
+    }
+
+    .config-item { flex: 1; }
+    .config-item label {
+      display: block;
+      font-family: var(--mono); font-size: 9px;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+    .config-item select, .config-item input {
+      width: 100%;
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: var(--r);
+      color: var(--text);
+      font-family: var(--mono); font-size: 11px;
+      padding: 6px 10px;
+      outline: none;
+      transition: border-color 0.15s;
+      -webkit-appearance: none;
+    }
+    .config-item select:focus, .config-item input:focus {
+      border-color: var(--accent);
+    }
+
+    /* ── Buttons ── */
+    .btn-row { display: flex; gap: 8px; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 7px; padding: 9px 16px;
+      border-radius: var(--r); border: none;
+      font-family: var(--sans); font-size: 12px; font-weight: 700;
+      cursor: pointer; letter-spacing: 0.3px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-start {
+      background: var(--accent);
+      color: #000; flex: 1;
+      box-shadow: 0 0 20px rgba(0,212,170,0.2);
+    }
+    .btn-start:hover:not(:disabled) {
+      background: var(--accent2);
+      box-shadow: 0 0 28px rgba(0,212,170,0.35);
+      transform: translateY(-1px);
+    }
+    .btn-start:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    .btn-cancel {
+      background: rgba(255,71,87,0.1);
+      color: var(--error);
+      border: 1px solid rgba(255,71,87,0.25);
+      display: none;
+    }
+    .btn-cancel.show { display: inline-flex; }
+    .btn-cancel:hover { background: rgba(255,71,87,0.18); }
+
+    .btn-download {
+      background: rgba(0,212,170,0.08);
+      color: var(--accent);
+      border: 1px solid rgba(0,212,170,0.2);
+      display: none;
+    }
+    .btn-download.show { display: inline-flex; }
+    .btn-download:hover { background: rgba(0,212,170,0.15); }
+
+    /* ── Progress section ── */
+    .progress-section { display: none; }
+    .progress-section.show { display: block; }
+
+    .progress-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 6px;
+    }
+    .progress-label {
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+    }
+    .progress-count {
+      font-family: var(--mono); font-size: 11px; font-weight: 700;
+      color: var(--accent);
+    }
+
+    .progress-track {
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .progress-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      border-radius: 2px;
+      transition: width 0.4s ease;
+      box-shadow: 0 0 8px rgba(0,212,170,0.5);
+    }
+
+    .current-url {
+      font-family: var(--mono); font-size: 9px;
+      color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .current-url span { color: var(--muted2); }
+
+    /* ── Results table ── */
+    .results-section { display: none; }
+    .results-section.show { display: block; }
+
+    .results-stats {
+      display: flex; gap: 12px; margin-bottom: 10px;
+    }
+    .stat {
+      flex: 1;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .stat-num {
+      font-family: var(--mono); font-size: 18px; font-weight: 700;
+      line-height: 1;
+    }
+    .stat-num.green  { color: var(--success); }
+    .stat-num.orange { color: var(--warn); }
+    .stat-num.red    { color: var(--error); }
+    .stat-label {
+      font-family: var(--mono); font-size: 9px;
+      color: var(--muted); margin-top: 3px;
+      text-transform: uppercase; letter-spacing: 0.8px;
+    }
+
+    .table-wrap {
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+      max-height: 250px;
+      overflow-y: auto;
+    }
+    .table-wrap::-webkit-scrollbar { width: 4px; }
+    .table-wrap::-webkit-scrollbar-track { background: var(--surface); }
+    .table-wrap::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    table { width: 100%; border-collapse: collapse; }
+
+    thead th {
+      background: var(--panel);
+      padding: 7px 10px;
+      text-align: left;
+      font-family: var(--mono); font-size: 9px; font-weight: 500;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+      position: sticky; top: 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+      animation: rowIn 0.25s ease both;
+    }
+    @keyframes rowIn {
+      from { opacity: 0; transform: translateX(-6px); }
+      to   { opacity: 1; transform: none; }
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,0.02); }
+
+    td { padding: 7px 10px; vertical-align: middle; }
+
+    .td-row {
+      font-family: var(--mono); font-size: 9px;
+      color: var(--muted); width: 28px; text-align: center;
+    }
+    .td-url {
+      font-family: var(--mono); font-size: 10px;
+      max-width: 180px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .td-url a { color: var(--muted2); text-decoration: none; }
+    .td-url a:hover { color: var(--accent); }
+
+    .td-price {
+      font-family: var(--mono); font-size: 12px; font-weight: 700;
+      color: var(--accent); white-space: nowrap;
+    }
+
+    .badge {
+      font-family: var(--mono); font-size: 9px; font-weight: 500;
+      padding: 2px 7px; border-radius: 3px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    .badge-ok      { background: rgba(0,212,170,0.1);   color: var(--success); border: 1px solid rgba(0,212,170,0.2); }
+    .badge-error   { background: rgba(255,71,87,0.1);   color: var(--error);   border: 1px solid rgba(255,71,87,0.2); }
+    .badge-pending { background: rgba(90,106,128,0.15); color: var(--muted);   border: 1px solid var(--border2); }
+    .badge-running {
+      background: rgba(255,165,2,0.1); color: var(--warn);
+      border: 1px solid rgba(255,165,2,0.2);
+      animation: pulse 1s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.5; }
+    }
+
+    .td-error {
+      font-family: var(--mono); font-size: 9px;
+      color: var(--error); max-width: 140px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      position: relative; z-index: 1;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .footer-status {
+      font-family: var(--mono); font-size: 9px;
+      color: var(--muted); display: flex; align-items: center; gap: 6px;
+    }
+    .status-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--muted);
+    }
+    .status-dot.active { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 1s infinite; }
+    .status-dot.done   { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+    .status-dot.error  { background: var(--error); }
+
+    .footer-hint {
+      font-family: var(--mono); font-size: 9px;
+      color: var(--muted); text-align: right;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo-wrap">
+      <div class="logo-mark">₹↓</div>
+      <div>
+        <div class="logo-title">Price Extractor Pro</div>
+        <div class="logo-sub">Bulk · Automated · CSV/XLS</div>
+      </div>
+    </div>
+    <div class="header-tags">
+      <span class="tag tag-amazon">Amazon</span>
+      <span class="tag tag-flipkart">Flipkart</span>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="body">
+
+    <!-- File Upload -->
+    <div class="section">
+      <div class="section-label">01 Input File</div>
+      <div class="upload-zone" id="uploadZone">
+        <div id="uploadDefault">
+          <div class="upload-icon">📂</div>
+          <div class="upload-title">Drop your CSV or Excel file here</div>
+          <div class="upload-sub">Column A = Product URLs &nbsp;·&nbsp; .csv / .xlsx / .xls accepted</div>
+        </div>
+        <div class="upload-file-info" id="uploadFileInfo">
+          <div class="file-icon" id="fileIcon">📄</div>
+          <div class="file-details">
+            <div class="file-name" id="fileName">—</div>
+            <div class="file-meta" id="fileMeta">—</div>
+          </div>
+          <button class="file-clear" id="fileClear" title="Remove file">✕</button>
+        </div>
+      </div>
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" />
+    </div>
+
+    <!-- Config -->
+    <div class="section">
+      <div class="section-label">02 Settings</div>
+      <div class="config-row">
+        <div class="config-item">
+          <label>Rate Limit</label>
+          <select id="rateLimit">
+            <option value="1500">Fast (1.5s)</option>
+            <option value="2000" selected>Normal (2s)</option>
+            <option value="3000">Safe (3s)</option>
+            <option value="5000">Slow (5s)</option>
+          </select>
+        </div>
+        <div class="config-item">
+          <label>URL Column</label>
+          <select id="urlColumn">
+            <option value="0" selected>Column A</option>
+            <option value="1">Column B</option>
+            <option value="2">Column C</option>
+          </select>
+        </div>
+        <div class="config-item">
+          <label>Skip Header Row</label>
+          <select id="skipHeader">
+            <option value="1" selected>Yes (skip row 1)</option>
+            <option value="0">No (use all rows)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="section">
+      <div class="section-label">03 Run</div>
+      <div class="btn-row">
+        <button class="btn btn-start" id="btnStart" disabled>
+          ⚡ Start Extraction
+        </button>
+        <button class="btn btn-cancel" id="btnCancel">
+          ✕ Cancel
+        </button>
+        <button class="btn btn-download" id="btnDownload">
+          ⬇ Download CSV
+        </button>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="section progress-section" id="progressSection">
+      <div class="section-label">04 Progress</div>
+      <div class="progress-header">
+        <span class="progress-label">Extracting prices…</span>
+        <span class="progress-count" id="progressCount">0 / 0</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="current-url" id="currentUrl">
+        <span>→</span> <span id="currentUrlText">Initializing…</span>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="section results-section" id="resultsSection">
+      <div class="section-label">05 Results</div>
+      <div class="results-stats" id="resultsStats"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>URL</th>
+              <th>Price (Col C)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /body -->
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-status">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Ready</span>
+    </div>
+    <div class="footer-hint" id="footerHint">Upload a file to begin</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
