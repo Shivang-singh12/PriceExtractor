@@ -187,6 +187,39 @@
 
     #fileInput { display: none; }
 
+    /* ── Google Sheets import ── */
+    .sheets-row {
+      display: flex; gap: 6px; margin-top: 8px; align-items: center;
+    }
+    .sheets-input {
+      flex: 1;
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: var(--r);
+      color: var(--text);
+      font-family: var(--mono); font-size: 10px;
+      padding: 6px 10px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .sheets-input:focus { border-color: #34a853; }
+    .sheets-input::placeholder { color: var(--muted); }
+    .btn-sheets {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 12px; border-radius: var(--r); border: none;
+      background: rgba(52,168,83,0.12);
+      color: #34a853;
+      border: 1px solid rgba(52,168,83,0.25);
+      font-family: var(--sans); font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .btn-sheets:hover { background: rgba(52,168,83,0.2); }
+    .btn-sheets:disabled { opacity: 0.4; cursor: not-allowed; }
+    .sheets-note {
+      font-family: var(--mono); font-size: 9px;
+      color: var(--muted); margin-top: 5px;
+    }
+
     /* ── Config row ── */
     .config-row {
       display: flex; gap: 10px; align-items: center;
@@ -205,8 +238,8 @@
       border: 1px solid var(--border2);
       border-radius: var(--r);
       color: var(--text);
-      font-family: var(--mono); font-size: 11px;
-      padding: 6px 10px;
+      font-family: var(--mono); font-size: 10px;
+      padding: 6px 8px;
       outline: none;
       transition: border-color 0.15s;
       -webkit-appearance: none;
@@ -377,6 +410,29 @@
       color: var(--accent); white-space: nowrap;
     }
 
+    .td-rating {
+      font-family: var(--mono); font-size: 11px; font-weight: 700;
+      color: var(--yellow); white-space: nowrap;
+    }
+    .td-total {
+      font-family: var(--mono); font-size: 10px;
+      color: var(--muted2); white-space: nowrap;
+    }
+    .stars { display: inline-flex; gap: 1px; }
+    .star-bar {
+      font-size: 9px; color: var(--muted);
+      display: flex; align-items: center; gap: 4px; margin: 1px 0;
+    }
+    .star-bar-fill {
+      height: 5px; background: var(--yellow); border-radius: 2px;
+      min-width: 2px; max-width: 60px;
+      transition: width 0.3s ease;
+    }
+    .star-bar-track {
+      width: 60px; height: 5px;
+      background: var(--border2); border-radius: 2px; overflow: hidden;
+    }
+
     .badge {
       font-family: var(--mono); font-size: 9px; font-weight: 500;
       padding: 2px 7px; border-radius: 3px;
@@ -467,6 +523,16 @@
         </div>
       </div>
       <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" />
+      <!-- Google Sheets import -->
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:1px">or import</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+      <div class="sheets-row">
+        <input class="sheets-input" id="sheetsUrl" placeholder="Paste Google Sheets URL (must be publicly shared)" />
+        <button class="btn-sheets" id="btnSheets">🔗 Import</button>
+      </div>
+      <div class="sheets-note" id="sheetsNote">Sheet must be shared as "Anyone with link can view"</div>
     </div>
 
     <!-- Config -->
@@ -480,6 +546,15 @@
             <option value="2000" selected>Normal (2s)</option>
             <option value="3000">Safe (3s)</option>
             <option value="5000">Slow (5s)</option>
+          </select>
+        </div>
+        <div class="config-item">
+          <label>Threads</label>
+          <select id="threads">
+            <option value="1" selected>1 — Safe</option>
+            <option value="2">2 — Balanced</option>
+            <option value="3">3 — Fast</option>
+            <option value="5">5 — Aggressive</option>
           </select>
         </div>
         <div class="config-item">
@@ -542,6 +617,8 @@
               <th>#</th>
               <th>URL</th>
               <th>Price (Col C)</th>
+              <th>Avg Rating (Col D)</th>
+              <th>Total Ratings (Col E)</th>
               <th>Status</th>
             </tr>
           </thead>
