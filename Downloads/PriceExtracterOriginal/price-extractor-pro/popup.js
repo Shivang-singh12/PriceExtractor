@@ -140,6 +140,97 @@ document.getElementById('skipHeader').addEventListener('change', () => {
 });
 
 // ───────────────────────────────────────────────────────────────
+//  Google Sheets Import (NEW v6)
+//  Works with publicly shared sheets (Anyone with link can view).
+//  Constructs the CSV export URL from the sheet ID, fetches it,
+//  and pipes it through the existing parseCSV() function.
+// ───────────────────────────────────────────────────────────────
+function extractSheetId(url) {
+  // Handles formats:
+  //   https://docs.google.com/spreadsheets/d/{ID}/edit#gid=0
+  //   https://docs.google.com/spreadsheets/d/{ID}/pub?...
+  //   https://docs.google.com/spreadsheets/d/{ID}
+  const m = url.match(/\/spreadsheets\/d\/([\w-]+)/);
+  return m ? m[1] : null;
+}
+
+function buildSheetCsvUrl(sheetId, gid = '0') {
+  return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+}
+
+document.getElementById('btnSheets').addEventListener('click', async () => {
+  const btn       = document.getElementById('btnSheets');
+  const noteEl    = document.getElementById('sheetsNote');
+  const rawUrl    = document.getElementById('sheetsUrl').value.trim();
+
+  if (!rawUrl) {
+    noteEl.textContent = '⚠ Paste a Google Sheets URL first';
+    noteEl.style.color = 'var(--error)';
+    return;
+  }
+
+  const sheetId = extractSheetId(rawUrl);
+  if (!sheetId) {
+    noteEl.textContent = '⚠ Not a valid Google Sheets URL';
+    noteEl.style.color = 'var(--error)';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Fetching…';
+  noteEl.textContent = 'Downloading sheet as CSV…';
+  noteEl.style.color = 'var(--muted)';
+
+  try {
+    // Extract optional gid (tab/sheet index) from URL
+    const gidMatch = rawUrl.match(/[?&]gid=(\d+)/);
+    const gid = gidMatch ? gidMatch[1] : '0';
+
+    const csvUrl  = buildSheetCsvUrl(sheetId, gid);
+    const res     = await fetch(csvUrl);
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} — is the sheet publicly shared?`);
+    }
+
+    const text = await res.text();
+    // Check if we got an HTML error page instead of CSV
+    if (text.trim().startsWith('<')) {
+      throw new Error('Got HTML instead of CSV — sheet may not be public');
+    }
+
+    const rows = parseCSV(text);
+    if (!rows.length) throw new Error('Sheet appears empty');
+
+    parsedRows = rows;
+    refreshUrlList();
+
+    const urlCount = allUrls.filter(u => u).length;
+
+    // Update upload zone to show sheet info
+    uploadZone.classList.add('has-file');
+    uploadDefault.style.display = 'none';
+    uploadFileInfo.classList.add('show');
+    document.getElementById('fileIcon').textContent = '📊';
+    document.getElementById('fileName').textContent = `Google Sheet · ${sheetId.slice(0, 16)}…`;
+    document.getElementById('fileMeta').textContent = `${rows.length} rows · ${urlCount} valid URLs detected`;
+
+    btnStart.disabled = urlCount === 0;
+    noteEl.textContent = `✓ Imported ${rows.length} rows from Google Sheets`;
+    noteEl.style.color = 'var(--success)';
+    setStatus('idle', `${urlCount} URLs ready (from Google Sheets)`);
+
+  } catch (e) {
+    noteEl.textContent = '⚠ ' + e.message;
+    noteEl.style.color = 'var(--error)';
+    setStatus('error', 'Sheets import failed');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔗 Import';
+  }
+});
+
+// ───────────────────────────────────────────────────────────────
 //  Start / Cancel
 // ───────────────────────────────────────────────────────────────
 btnStart.addEventListener('click', async () => {
@@ -167,8 +258,9 @@ btnStart.addEventListener('click', async () => {
   renderPendingRows(validUrls);
 
   // Send job to background
-  const rateLimit = parseInt(document.getElementById('rateLimit').value);
-  chrome.runtime.sendMessage({ action: 'startJob', urls: validUrls, rateLimit });
+  const rateLimit   = parseInt(document.getElementById('rateLimit').value);
+  const concurrency = parseInt(document.getElementById('threads').value);
+  chrome.runtime.sendMessage({ action: 'startJob', urls: validUrls, rateLimit, concurrency });
 
   // Start polling
   pollTimer = setInterval(pollProgress, 600);
@@ -190,21 +282,25 @@ async function pollProgress() {
   chrome.runtime.sendMessage({ action: 'getProgress' }, (job) => {
     if (!job) return;
 
-    const { total, current, results, status } = job;
+    const { total, completed, active, results, status } = job;
     finalResults = results || {};
 
-    // Update progress bar
-    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+    // Progress bar based on completed count
+    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
     progressFill.style.width = pct + '%';
-    progressCount.textContent = `${current} / ${total}`;
+    progressCount.textContent = `${completed} / ${total}`;
 
-    // Update current URL hint
-    if (current < allUrls.length) {
-      currentUrlText.textContent = allUrls[current] || '—';
+    // Current URL: show what's next in queue
+    const nextIdx = Object.keys(results || {}).length;
+    if (nextIdx < allUrls.length) {
+      currentUrlText.textContent = allUrls[nextIdx] || '—';
     }
 
-    // Update rows
-    updateResultRows(results || {}, current, total);
+    // Thread activity badges
+    renderThreadBadges(active || 0, parseInt(document.getElementById('threads').value));
+
+    // Update result rows
+    updateResultRows(results || {}, completed, total);
 
     if (status === 'complete' || status === 'cancelled') {
       clearInterval(pollTimer);
@@ -219,11 +315,26 @@ async function pollProgress() {
         btnDownload.classList.add('show');
       }
 
+      renderThreadBadges(0, 0);
       btnCancel.classList.remove('show');
       btnStart.disabled = false;
       showResultsStats(results || {}, total);
     }
   });
+}
+
+function renderThreadBadges(active, total) {
+  const el = document.getElementById('threadBadges');
+  if (!el || total === 0) { if(el) el.innerHTML = ''; return; }
+  el.innerHTML = Array.from({ length: total }, (_, i) => {
+    const on = i < active;
+    return `<div title="Thread ${i+1}: ${on ? 'active' : 'idle'}" style="
+      width:8px;height:8px;border-radius:50%;
+      background:${on ? 'var(--accent)' : 'var(--border2)'};
+      box-shadow:${on ? '0 0 6px var(--accent)' : 'none'};
+      transition:all 0.3s;
+    "></div>`;
+  }).join('');
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -239,50 +350,90 @@ function renderPendingRows(urls) {
       <td class="td-row">${i + 1}</td>
       <td class="td-url"><a href="${esc(url)}" title="${esc(url)}" target="_blank">${shortUrl(url)}</a></td>
       <td class="td-price" id="price-${i}">—</td>
+      <td class="td-rating" id="rating-${i}">—</td>
+      <td class="td-total"  id="total-${i}">—</td>
       <td id="status-${i}"><span class="badge badge-pending">Pending</span></td>
     `;
     resultsBody.appendChild(tr);
   });
 }
 
+function renderStarBreakdown(breakdown) {
+  if (!breakdown || typeof breakdown !== 'object') return '';
+  const stars = ['5★','4★','3★','2★','1★'];
+  return stars.map(s => {
+    const pct = breakdown[s] || '0%';
+    const num = parseInt(pct);
+    return `<div class="star-bar">
+      <span style="width:14px;color:var(--yellow);font-size:9px">${s}</span>
+      <div class="star-bar-track"><div class="star-bar-fill" style="width:${Math.min(num,100)}%"></div></div>
+      <span style="font-size:9px;color:var(--muted2)">${pct}</span>
+    </div>`;
+  }).join('');
+}
+
 function updateResultRows(results, current, total) {
   for (const [idxStr, res] of Object.entries(results)) {
-    const i = parseInt(idxStr);
+    const i        = parseInt(idxStr);
     const priceEl  = document.getElementById(`price-${i}`);
+    const ratingEl = document.getElementById(`rating-${i}`);
+    const totalEl  = document.getElementById(`total-${i}`);
     const statusEl = document.getElementById(`status-${i}`);
     if (!priceEl || !statusEl) continue;
 
     if (res.price) {
-      priceEl.textContent  = res.price;
-      statusEl.innerHTML   = `<span class="badge badge-ok">✓ Done</span>`;
+      priceEl.textContent = res.price;
+      statusEl.innerHTML  = `<span class="badge badge-ok">✓ Done</span>`;
     } else {
-      priceEl.innerHTML    = `<span style="color:var(--error);font-size:9px;" title="${esc(res.error)}">N/A</span>`;
-      statusEl.innerHTML   = `<span class="badge badge-error" title="${esc(res.error)}">Error</span>`;
+      priceEl.innerHTML   = `<span style="color:var(--error);font-size:9px;" title="${esc(res.error)}">N/A</span>`;
+      statusEl.innerHTML  = `<span class="badge badge-error" title="${esc(res.error)}">Error</span>`;
+    }
+
+    // Ratings
+    if (ratingEl) {
+      if (res.avgRating) {
+        const stars = '★'.repeat(Math.round(parseFloat(res.avgRating)));
+        const breakdown = res.breakdown ? `<div style="margin-top:4px">${renderStarBreakdown(res.breakdown)}</div>` : '';
+        ratingEl.innerHTML = `<span style="color:var(--yellow)">${res.avgRating}</span> <span style="color:var(--muted);font-size:9px">/5</span>${breakdown}`;
+      } else {
+        ratingEl.innerHTML = `<span style="color:var(--muted);font-size:9px">—</span>`;
+      }
+    }
+    if (totalEl) {
+      if (res.totalRatings) {
+        const n = parseInt(res.totalRatings);
+        totalEl.textContent = n >= 1000 ? (n/1000).toFixed(1) + 'k' : res.totalRatings;
+      } else {
+        totalEl.innerHTML = `<span style="color:var(--muted);font-size:9px">—</span>`;
+      }
     }
   }
 
-  // Mark current processing row
-  if (current < total) {
-    const statusEl = document.getElementById(`status-${current}`);
-    const priceEl  = document.getElementById(`price-${current}`);
-    if (statusEl && !results[current]) {
+  // Mark the first N unresolved rows as "Live" (N = thread count)
+  const threads = parseInt(document.getElementById('threads')?.value || '1');
+  let activeMarked = 0;
+  for (let i = 0; i < total && activeMarked < threads; i++) {
+    if (results[i]) continue; // already completed
+    const statusEl = document.getElementById(`status-${i}`);
+    const priceEl  = document.getElementById(`price-${i}`);
+    if (statusEl && statusEl.querySelector('.badge-pending')) {
       statusEl.innerHTML = `<span class="badge badge-running">⚡ Live</span>`;
     }
-    if (priceEl && !results[current]) {
-      priceEl.textContent = '…';
-    }
+    if (priceEl && (priceEl.textContent === '—')) priceEl.textContent = '…';
+    activeMarked++;
   }
 }
 
 function showResultsStats(results, total) {
   const success = Object.values(results).filter(r => r.price).length;
   const errors  = Object.values(results).filter(r => !r.price).length;
+  const rated   = Object.values(results).filter(r => r.avgRating).length;
   const pending = total - Object.keys(results).length;
 
   resultsStats.innerHTML = `
-    <div class="stat"><div class="stat-num green">${success}</div><div class="stat-label">✓ Extracted</div></div>
+    <div class="stat"><div class="stat-num green">${success}</div><div class="stat-label">✓ Prices</div></div>
+    <div class="stat"><div class="stat-num" style="color:var(--yellow)">${rated}</div><div class="stat-label">★ Ratings</div></div>
     <div class="stat"><div class="stat-num red">${errors}</div><div class="stat-label">✕ Errors</div></div>
-    <div class="stat"><div class="stat-num orange">${pending}</div><div class="stat-label">⊘ Skipped</div></div>
     <div class="stat"><div class="stat-num" style="color:var(--muted2)">${total}</div><div class="stat-label">Total</div></div>
   `;
 }
@@ -301,20 +452,23 @@ btnDownload.addEventListener('click', () => {
   const skipHdr  = parseInt(document.getElementById('skipHeader').value);
   const colIdx   = parseInt(document.getElementById('urlColumn').value);
 
-  // Rebuild rows with prices in Column C (index 2)
+  // Rebuild rows with prices in Col C, avg rating in Col D, total ratings in Col E
   const outputRows = parsedRows.map((row, rowIdx) => {
-    const urlRowIdx = rowIdx - (skipHdr ? 1 : 0); // Adjust for header
+    const urlRowIdx = rowIdx - (skipHdr ? 1 : 0);
     const isHeader  = skipHdr && rowIdx === 0;
 
     const newRow = [...row];
-    // Ensure at least 3 columns
-    while (newRow.length < 3) newRow.push('');
+    while (newRow.length < 5) newRow.push('');
 
     if (isHeader) {
       newRow[2] = 'Price';
+      newRow[3] = 'Avg Rating';
+      newRow[4] = 'Total Ratings';
     } else if (urlRowIdx >= 0 && urlRowIdx < allUrls.length) {
       const result = finalResults[urlRowIdx];
-      newRow[2] = result?.price || (result?.error ? `ERROR: ${result.error}` : '');
+      newRow[2] = result?.price      || (result?.error ? `ERROR: ${result.error}` : '');
+      newRow[3] = result?.avgRating  || '';
+      newRow[4] = result?.totalRatings || '';
     }
 
     return newRow;
