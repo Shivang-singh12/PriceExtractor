@@ -36,6 +36,7 @@
   "host_permissions": [
     "*://*.amazon.in/*",
     "*://*.flipkart.com/*",
-    "*://dl.flipkart.com/*"
+    "*://dl.flipkart.com/*",
+    "https://docs.google.com/*"
   ]
 }
